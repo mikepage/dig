@@ -59,8 +59,19 @@ async function resolveWithGoogleDoH(
   dnssecValidate: boolean = false
 ): Promise<GoogleDoHResult> {
   const typeNum = DNS_TYPE_MAP[type];
-  // do=true requests DNSSEC data (sets DO bit)
-  const url = `https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=${typeNum}${dnssecValidate ? "&do=true" : ""}`;
+  // do=true requests DNSSEC data (sets DO bit), cd=true disables DNSSEC validation
+  // When validation enabled: request DNSSEC data, allow validation to fail bad signatures
+  // When validation disabled: use cd=true to skip validation (allows querying domains with broken DNSSEC)
+  const params = new URLSearchParams({
+    name: domain,
+    type: typeNum.toString(),
+  });
+  if (dnssecValidate) {
+    params.set("do", "true"); // Request DNSSEC data
+  } else {
+    params.set("cd", "true"); // Disable DNSSEC validation
+  }
+  const url = `https://dns.google/resolve?${params}`;
 
   const response = await fetch(url);
   if (!response.ok) {
