@@ -130,6 +130,9 @@ export default function DnsLookup() {
     if (typeof record === "string") {
       return record;
     }
+    if (type === "TXT" && Array.isArray(record)) {
+      return record.join("");
+    }
     if (type === "MX" && typeof record === "object" && record !== null) {
       const mx = record as { preference: number; exchange: string };
       return `${mx.preference} ${mx.exchange}`;
