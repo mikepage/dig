@@ -18,11 +18,17 @@ const Resolvers = [
 ];
 
 
+interface DnssecInfo {
+  validated: boolean;
+  enabled: boolean;
+}
+
 interface DnsResult {
   recordType: string;
   domain: string;
   records: unknown[];
   queryTime: number;
+  dnssec?: DnssecInfo;
 }
 
 const ValidRecordTypes = RecordTypes.map((r) => r.value);
@@ -53,6 +59,7 @@ export default function DnsLookup() {
   const domain = useSignal("");
   const recordType = useSignal("A");
   const resolver = useSignal("system");
+  const dnssecValidate = useSignal(false);
   const isLoading = useSignal(false);
   const result = useSignal<DnsResult | null>(null);
   const error = useSignal<string | null>(null);
@@ -77,6 +84,11 @@ export default function DnsLookup() {
         resolver: resolver.value,
       });
 
+      // Only include dnssec param when using Google DoH and checkbox is checked
+      if (resolver.value === "google" && dnssecValidate.value) {
+        params.set("dnssec", "true");
+      }
+
       const response = await fetch(`/api/dns?${params}`);
       const data = await response.json();
 
@@ -97,6 +109,7 @@ export default function DnsLookup() {
     domain.value = "";
     recordType.value = "A";
     resolver.value = "system";
+    dnssecValidate.value = false;
     result.value = null;
     error.value = null;
     updateHash("A", "");
@@ -210,9 +223,13 @@ export default function DnsLookup() {
             </label>
             <select
               value={resolver.value}
-              onChange={(e) =>
-                (resolver.value = (e.target as HTMLSelectElement).value)
-              }
+              onChange={(e) => {
+                resolver.value = (e.target as HTMLSelectElement).value;
+                // Reset DNSSEC when switching away from Google
+                if (resolver.value !== "google") {
+                  dnssecValidate.value = false;
+                }
+              }}
               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
               {Resolvers.map((r) => (
@@ -223,6 +240,28 @@ export default function DnsLookup() {
             </select>
           </div>
         </div>
+
+        {/* DNSSEC Validation Option - only visible for Google DoH */}
+        {resolver.value === "google" && (
+          <div class="mb-4">
+            <label class="inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={dnssecValidate.value}
+                onChange={(e) =>
+                  (dnssecValidate.value = (e.target as HTMLInputElement).checked)
+                }
+                class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+              <span class="ml-2 text-sm text-gray-700">
+                DNSSEC Validation
+              </span>
+              <span class="ml-2 text-xs text-gray-500">
+                (Verify cryptographic signatures)
+              </span>
+            </label>
+          </div>
+        )}
 
         {/* Action Buttons */}
         <div class="flex flex-wrap gap-3">
@@ -257,7 +296,7 @@ export default function DnsLookup() {
           </h3>
 
           <div class="space-y-4">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <span class="text-sm text-gray-500">Record Type</span>
                 <p class="font-mono text-sm bg-gray-50 p-2 rounded mt-1">
@@ -270,6 +309,20 @@ export default function DnsLookup() {
                   {result.value.queryTime}ms
                 </p>
               </div>
+              {result.value.dnssec && (
+                <div>
+                  <span class="text-sm text-gray-500">DNSSEC Status</span>
+                  <p
+                    class={`font-mono text-sm p-2 rounded mt-1 ${
+                      result.value.dnssec.validated
+                        ? "bg-green-50 text-green-700"
+                        : "bg-yellow-50 text-yellow-700"
+                    }`}
+                  >
+                    {result.value.dnssec.validated ? "Validated (AD)" : "Not Signed"}
+                  </p>
+                </div>
+              )}
             </div>
 
             <div>

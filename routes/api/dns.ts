@@ -16,6 +16,8 @@ type RecordType =
 
 interface GoogleDnsResponse {
   Status: number;
+  AD?: boolean; // Authenticated Data - DNSSEC validation passed
+  CD?: boolean; // Checking Disabled
   Answer?: Array<{
     name: string;
     type: number;
@@ -30,6 +32,11 @@ interface GoogleDnsResponse {
   }>;
 }
 
+interface DnssecInfo {
+  validated: boolean;
+  enabled: boolean;
+}
+
 const DNS_TYPE_MAP: Record<string, number> = {
   A: 1,
   AAAA: 28,
@@ -41,12 +48,19 @@ const DNS_TYPE_MAP: Record<string, number> = {
   PTR: 12,
 };
 
+interface GoogleDoHResult {
+  records: unknown[];
+  dnssec: DnssecInfo | null;
+}
+
 async function resolveWithGoogleDoH(
   domain: string,
-  type: RecordType
-): Promise<unknown[]> {
+  type: RecordType,
+  dnssecValidate: boolean = false
+): Promise<GoogleDoHResult> {
   const typeNum = DNS_TYPE_MAP[type];
-  const url = `https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=${typeNum}`;
+  // do=true requests DNSSEC data (sets DO bit)
+  const url = `https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=${typeNum}${dnssecValidate ? "&do=true" : ""}`;
 
   const response = await fetch(url);
   if (!response.ok) {
@@ -66,15 +80,23 @@ async function resolveWithGoogleDoH(
     throw new Error(statusMessages[data.Status] || `DNS error: ${data.Status}`);
   }
 
+  // DNSSEC info - AD (Authenticated Data) flag indicates validation passed
+  const dnssec: DnssecInfo | null = dnssecValidate
+    ? {
+        validated: data.AD === true,
+        enabled: true,
+      }
+    : null;
+
   if (!data.Answer) {
-    return [];
+    return { records: [], dnssec };
   }
 
   // Filter answers to only include the requested type
   const answers = data.Answer.filter((a) => a.type === typeNum);
 
   // Parse the data based on record type
-  return answers.map((answer) => {
+  const records = answers.map((answer) => {
     switch (type) {
       case "MX": {
         // MX format: "10 mail.example.com."
@@ -110,6 +132,8 @@ async function resolveWithGoogleDoH(
         return answer.data;
     }
   });
+
+  return { records, dnssec };
 }
 
 export const handler = define.handlers({
@@ -118,6 +142,7 @@ export const handler = define.handlers({
     const domain = url.searchParams.get("domain");
     const type = url.searchParams.get("type") as RecordType | null;
     const resolver = url.searchParams.get("resolver") || "system";
+    const dnssec = url.searchParams.get("dnssec") === "true";
 
     if (!domain) {
       return Response.json(
@@ -154,8 +179,12 @@ export const handler = define.handlers({
       const startTime = performance.now();
 
       let records: unknown[];
+      let dnssecInfo: DnssecInfo | null = null;
+
       if (resolver === "google") {
-        records = await resolveWithGoogleDoH(domain, type);
+        const result = await resolveWithGoogleDoH(domain, type, dnssec);
+        records = result.records;
+        dnssecInfo = result.dnssec;
       } else {
         records = await Deno.resolveDns(domain, type);
       }
@@ -170,6 +199,7 @@ export const handler = define.handlers({
         resolver,
         records,
         queryTime,
+        ...(dnssecInfo && { dnssec: dnssecInfo }),
       });
     } catch (err) {
       const errorMessage =
