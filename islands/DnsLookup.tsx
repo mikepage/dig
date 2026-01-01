@@ -12,6 +12,11 @@ const RecordTypes = [
   { value: "PTR", label: "PTR - Pointer Record" },
 ];
 
+const Resolvers = [
+  { value: "system", label: "System Default" },
+  { value: "google", label: "Google DNS (DoH)" },
+];
+
 
 interface DnsResult {
   recordType: string;
@@ -47,6 +52,7 @@ function updateHash(type: string, domain: string) {
 export default function DnsLookup() {
   const domain = useSignal("");
   const recordType = useSignal("A");
+  const resolver = useSignal("system");
   const isLoading = useSignal(false);
   const result = useSignal<DnsResult | null>(null);
   const error = useSignal<string | null>(null);
@@ -68,6 +74,7 @@ export default function DnsLookup() {
       const params = new URLSearchParams({
         domain: domainValue,
         type: recordType.value,
+        resolver: resolver.value,
       });
 
       const response = await fetch(`/api/dns?${params}`);
@@ -89,6 +96,7 @@ export default function DnsLookup() {
   const handleClear = () => {
     domain.value = "";
     recordType.value = "A";
+    resolver.value = "system";
     result.value = null;
     error.value = null;
     updateHash("A", "");
@@ -158,7 +166,7 @@ export default function DnsLookup() {
       <div class="bg-white rounded-lg shadow p-6 mb-6">
         <h2 class="text-lg font-semibold text-gray-800 mb-4">DNS Query</h2>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
           <div class="md:col-span-2">
             <label class="block text-sm font-medium text-gray-700 mb-1">
               Domain Name
@@ -191,6 +199,25 @@ export default function DnsLookup() {
               {RecordTypes.map((type) => (
                 <option key={type.value} value={type.value}>
                   {type.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">
+              DNS Resolver
+            </label>
+            <select
+              value={resolver.value}
+              onChange={(e) =>
+                (resolver.value = (e.target as HTMLSelectElement).value)
+              }
+              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              {Resolvers.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
                 </option>
               ))}
             </select>
