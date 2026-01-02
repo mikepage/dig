@@ -48,49 +48,17 @@ const DNS_TYPE_MAP: Record<string, number> = {
   PTR: 12,
 };
 
-interface GoogleDoHResult {
+interface DoHResult {
   records: unknown[];
   dnssec: DnssecInfo | null;
 }
 
-async function resolveWithGoogleDoH(
-  domain: string,
+function parseDoHResponse(
+  data: GoogleDnsResponse,
   type: RecordType,
-  dnssecValidate: boolean = false
-): Promise<GoogleDoHResult> {
-  const typeNum = DNS_TYPE_MAP[type];
-  // do=true requests DNSSEC data (sets DO bit), cd=true disables DNSSEC validation
-  // When validation enabled: request DNSSEC data, allow validation to fail bad signatures
-  // When validation disabled: use cd=true to skip validation (allows querying domains with broken DNSSEC)
-  const params = new URLSearchParams({
-    name: domain,
-    type: typeNum.toString(),
-  });
-  if (dnssecValidate) {
-    params.set("do", "true"); // Request DNSSEC data
-  } else {
-    params.set("cd", "true"); // Disable DNSSEC validation
-  }
-  const url = `https://dns.google/resolve?${params}`;
-
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Google DNS request failed: ${response.statusText}`);
-  }
-
-  const data: GoogleDnsResponse = await response.json();
-
-  if (data.Status !== 0) {
-    const statusMessages: Record<number, string> = {
-      1: "Format error",
-      2: "Server failure",
-      3: "Non-existent domain",
-      4: "Not implemented",
-      5: "Query refused",
-    };
-    throw new Error(statusMessages[data.Status] || `DNS error: ${data.Status}`);
-  }
-
+  typeNum: number,
+  dnssecValidate: boolean
+): DoHResult {
   // DNSSEC info - AD (Authenticated Data) flag indicates validation passed
   const dnssec: DnssecInfo | null = dnssecValidate
     ? {
@@ -147,6 +115,91 @@ async function resolveWithGoogleDoH(
   return { records, dnssec };
 }
 
+async function resolveWithGoogleDoH(
+  domain: string,
+  type: RecordType,
+  dnssecValidate: boolean = false
+): Promise<DoHResult> {
+  const typeNum = DNS_TYPE_MAP[type];
+  // do=true requests DNSSEC data (sets DO bit), cd=true disables DNSSEC validation
+  // When validation enabled: request DNSSEC data, allow validation to fail bad signatures
+  // When validation disabled: use cd=true to skip validation (allows querying domains with broken DNSSEC)
+  const params = new URLSearchParams({
+    name: domain,
+    type: typeNum.toString(),
+  });
+  if (dnssecValidate) {
+    params.set("do", "true"); // Request DNSSEC data
+  } else {
+    params.set("cd", "true"); // Disable DNSSEC validation
+  }
+  const url = `https://dns.google/resolve?${params}`;
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Google DNS request failed: ${response.statusText}`);
+  }
+
+  const data: GoogleDnsResponse = await response.json();
+
+  if (data.Status !== 0) {
+    const statusMessages: Record<number, string> = {
+      1: "Format error",
+      2: "Server failure",
+      3: "Non-existent domain",
+      4: "Not implemented",
+      5: "Query refused",
+    };
+    throw new Error(statusMessages[data.Status] || `DNS error: ${data.Status}`);
+  }
+
+  return parseDoHResponse(data, type, typeNum, dnssecValidate);
+}
+
+async function resolveWithCloudflareDoH(
+  domain: string,
+  type: RecordType,
+  dnssecValidate: boolean = false
+): Promise<DoHResult> {
+  const typeNum = DNS_TYPE_MAP[type];
+  // Cloudflare DoH JSON API
+  // cd=true disables DNSSEC validation
+  const params = new URLSearchParams({
+    name: domain,
+    type: type,
+  });
+  if (dnssecValidate) {
+    params.set("do", "true"); // Request DNSSEC data
+  } else {
+    params.set("cd", "true"); // Disable DNSSEC validation
+  }
+  const url = `https://cloudflare-dns.com/dns-query?${params}`;
+
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/dns-json",
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Cloudflare DNS request failed: ${response.statusText}`);
+  }
+
+  const data: GoogleDnsResponse = await response.json();
+
+  if (data.Status !== 0) {
+    const statusMessages: Record<number, string> = {
+      1: "Format error",
+      2: "Server failure",
+      3: "Non-existent domain",
+      4: "Not implemented",
+      5: "Query refused",
+    };
+    throw new Error(statusMessages[data.Status] || `DNS error: ${data.Status}`);
+  }
+
+  return parseDoHResponse(data, type, typeNum, dnssecValidate);
+}
+
 export const handler = define.handlers({
   async GET(ctx) {
     const url = new URL(ctx.req.url);
@@ -189,16 +242,13 @@ export const handler = define.handlers({
     try {
       const startTime = performance.now();
 
-      let records: unknown[];
-      let dnssecInfo: DnssecInfo | null = null;
+      const resolvers: Record<string, (domain: string, type: RecordType, dnssec: boolean) => Promise<DoHResult>> = {
+        google: resolveWithGoogleDoH,
+        cloudflare: resolveWithCloudflareDoH,
+      };
 
-      if (resolver === "google") {
-        const result = await resolveWithGoogleDoH(domain, type, dnssec);
-        records = result.records;
-        dnssecInfo = result.dnssec;
-      } else {
-        records = await Deno.resolveDns(domain, type);
-      }
+      const resolveFn = resolvers[resolver] ?? resolvers.google;
+      const { records, dnssec: dnssecInfo } = await resolveFn(domain, type, dnssec);
 
       const endTime = performance.now();
       const queryTime = Math.round(endTime - startTime);

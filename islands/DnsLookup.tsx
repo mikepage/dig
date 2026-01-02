@@ -13,8 +13,8 @@ const RecordTypes = [
 ];
 
 const Resolvers = [
-  { value: "system", label: "System Default" },
   { value: "google", label: "Google DNS (DoH)" },
+  { value: "cloudflare", label: "Cloudflare DNS (DoH)" },
 ];
 
 
@@ -58,8 +58,8 @@ function updateHash(type: string, domain: string) {
 export default function DnsLookup() {
   const domain = useSignal("");
   const recordType = useSignal("A");
-  const resolver = useSignal("system");
-  const dnssecValidate = useSignal(true); // Enabled by default for Google DoH
+  const resolver = useSignal("google");
+  const dnssecValidate = useSignal(true); // Enabled by default for DoH resolvers
   const isLoading = useSignal(false);
   const result = useSignal<DnsResult | null>(null);
   const error = useSignal<string | null>(null);
@@ -108,7 +108,7 @@ export default function DnsLookup() {
   const handleClear = () => {
     domain.value = "";
     recordType.value = "A";
-    resolver.value = "system";
+    resolver.value = "google";
     dnssecValidate.value = true;
     result.value = null;
     error.value = null;
@@ -239,8 +239,8 @@ export default function DnsLookup() {
           </div>
         </div>
 
-        {/* DNSSEC Validation Option - only visible for Google DoH */}
-        {resolver.value === "google" && (
+        {/* DNSSEC Validation Option - visible for DoH resolvers */}
+        {(resolver.value === "google" || resolver.value === "cloudflare") && (
           <div class="mb-4">
             <span class="block text-sm font-medium text-gray-700 mb-2">
               DNSSEC Validation
