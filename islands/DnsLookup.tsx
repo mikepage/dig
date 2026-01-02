@@ -84,8 +84,8 @@ export default function DnsLookup() {
         resolver: resolver.value,
       });
 
-      // Include dnssec param when using Google DoH
-      if (resolver.value === "google") {
+      // Include dnssec param for DoH resolvers
+      if (resolver.value === "google" || resolver.value === "cloudflare") {
         params.set("dnssec", dnssecValidate.value ? "true" : "false");
       }
 
