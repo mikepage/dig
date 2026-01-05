@@ -15,7 +15,7 @@ export default define.page(function Home() {
           </h1>
           <p class="text-[#666] text-sm mb-8">
             Query DNS records for any domain. Supports A, AAAA, CNAME, MX, NS,
-            TXT, SOA, and PTR record types with optional custom name server.
+            TXT, SOA, and PTR record types.
           </p>
           <DnsLookup />
         </div>
