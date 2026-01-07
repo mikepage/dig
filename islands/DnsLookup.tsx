@@ -17,6 +17,7 @@ const Resolvers = [
   { value: "cloudflare", label: "Cloudflare (1.1.1.1)" },
   { value: "cloudflare-security", label: "Cloudflare Security (1.1.1.2)" },
   { value: "cloudflare-family", label: "Cloudflare Family (1.1.1.3)" },
+  { value: "quad9", label: "Quad9 (9.9.9.9)" },
 ];
 
 
@@ -87,7 +88,7 @@ export default function DnsLookup() {
       });
 
       // Include dnssec param for DoH resolvers
-      if (resolver.value === "google" || resolver.value === "cloudflare" || resolver.value === "cloudflare-security" || resolver.value === "cloudflare-family") {
+      if (resolver.value === "google" || resolver.value === "cloudflare" || resolver.value === "cloudflare-security" || resolver.value === "cloudflare-family" || resolver.value === "quad9") {
         params.set("dnssec", dnssecValidate.value ? "true" : "false");
       }
 
@@ -242,7 +243,7 @@ export default function DnsLookup() {
         </div>
 
         {/* DNSSEC Validation Option - visible for DoH resolvers */}
-        {(resolver.value === "google" || resolver.value === "cloudflare" || resolver.value === "cloudflare-security" || resolver.value === "cloudflare-family") && (
+        {(resolver.value === "google" || resolver.value === "cloudflare" || resolver.value === "cloudflare-security" || resolver.value === "cloudflare-family" || resolver.value === "quad9") && (
           <div class="mb-4">
             <span class="block text-sm font-medium text-gray-700 mb-2">
               DNSSEC Validation

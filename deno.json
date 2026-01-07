@@ -26,7 +26,10 @@
     "@fresh/plugin-vite": "jsr:@fresh/plugin-vite@^1.0.8",
     "vite": "npm:vite@^7.1.3",
     "tailwindcss": "npm:tailwindcss@^4.1.10",
-    "@tailwindcss/vite": "npm:@tailwindcss/vite@^4.1.12"
+    "@tailwindcss/vite": "npm:@tailwindcss/vite@^4.1.12",
+    "dns-packet": "npm:dns-packet@^5.6.1",
+    "@types/dns-packet": "npm:@types/dns-packet@^5.6.5",
+    "node:buffer": "npm:buffer@^6.0.3"
   },
   "compilerOptions": {
     "lib": [

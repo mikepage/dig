@@ -1,4 +1,6 @@
 import { define } from "../../utils.ts";
+import * as dnsPacket from "dns-packet";
+import { Buffer } from "node:buffer";
 
 type RecordType =
   | "A"
@@ -230,6 +232,156 @@ async function resolveWithCloudflareFamilyDoH(
   );
 }
 
+// Binary DoH resolver using RFC 8484 wire format
+async function resolveWithBinaryDoH(
+  domain: string,
+  type: RecordType,
+  endpoint: string,
+  providerName: string,
+  dnssecValidate: boolean = false
+): Promise<DoHResult> {
+  const typeNum = DNS_TYPE_MAP[type];
+
+  // Build DNS query packet - use type assertion for RecordType compatibility
+  // deno-lint-ignore no-explicit-any
+  const queryPacket: any = {
+    type: "query",
+    id: Math.floor(Math.random() * 65535),
+    flags: dnsPacket.RECURSION_DESIRED,
+    questions: [{ type, name: domain }],
+  };
+
+  // Add EDNS for DNSSEC support
+  if (dnssecValidate) {
+    queryPacket.additionals = [
+      {
+        type: "OPT",
+        name: ".",
+        udpPayloadSize: 4096,
+        extendedRcode: 0,
+        ednsVersion: 0,
+        flags: dnsPacket.DNSSEC_OK,
+        flag_do: true,
+        options: [],
+      },
+    ];
+  } else {
+    // Set CD flag to disable DNSSEC validation
+    queryPacket.flags = dnsPacket.RECURSION_DESIRED | dnsPacket.CHECKING_DISABLED;
+  }
+
+  // Encode query to binary wire format
+  const queryBuffer = dnsPacket.encode(queryPacket);
+
+  // Send POST request with binary DNS message
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/dns-message",
+      Accept: "application/dns-message",
+    },
+    body: new Uint8Array(queryBuffer),
+  });
+
+  if (!response.ok) {
+    throw new Error(`${providerName} DNS request failed: ${response.statusText}`);
+  }
+
+  // Decode binary response - use Buffer for dns-packet compatibility
+  const responseArrayBuffer = await response.arrayBuffer();
+  const decoded = dnsPacket.decode(Buffer.from(responseArrayBuffer));
+
+  // Check response code (RCODE)
+  const rcode = (decoded.flags ?? 0) & 0x0f;
+  if (rcode !== 0) {
+    const statusMessages: Record<number, string> = {
+      1: "Format error",
+      2: "Server failure",
+      3: "Non-existent domain",
+      4: "Not implemented",
+      5: "Query refused",
+    };
+    throw new Error(statusMessages[rcode] || `DNS error: ${rcode}`);
+  }
+
+  // Check AD (Authenticated Data) flag for DNSSEC
+  const adFlag = ((decoded.flags ?? 0) & dnsPacket.AUTHENTIC_DATA) !== 0;
+  const dnssec: DnssecInfo | null = dnssecValidate
+    ? { validated: adFlag, enabled: true }
+    : null;
+
+  if (!decoded.answers || decoded.answers.length === 0) {
+    return { records: [], dnssec };
+  }
+
+  // Filter answers to only include the requested type
+  const answers = decoded.answers.filter((a) => a.type === type);
+
+  // Parse the data based on record type
+  const records = answers.map((answer) => {
+    // deno-lint-ignore no-explicit-any
+    const data = (answer as any).data;
+    switch (type) {
+      case "MX": {
+        const mx = data as { preference: number; exchange: string };
+        return {
+          preference: mx.preference,
+          exchange: mx.exchange.replace(/\.$/, ""),
+        };
+      }
+      case "SOA": {
+        const soa = data as {
+          mname: string;
+          rname: string;
+          serial: number;
+          refresh: number;
+          retry: number;
+          expire: number;
+          minimum: number;
+        };
+        return {
+          mname: soa.mname.replace(/\.$/, ""),
+          rname: soa.rname.replace(/\.$/, ""),
+          serial: soa.serial,
+          refresh: soa.refresh,
+          retry: soa.retry,
+          expire: soa.expire,
+          minimum: soa.minimum,
+        };
+      }
+      case "TXT": {
+        // TXT records come as Uint8Array arrays, convert to strings
+        const txtData = data as Uint8Array[];
+        return txtData.map((buf) => new TextDecoder().decode(buf));
+      }
+      case "CNAME":
+      case "NS":
+      case "PTR":
+        // Remove trailing dot from domain names
+        return (data as string).replace(/\.$/, "");
+      default:
+        return data;
+    }
+  });
+
+  return { records, dnssec };
+}
+
+async function resolveWithQuad9DoH(
+  domain: string,
+  type: RecordType,
+  dnssecValidate: boolean = false
+): Promise<DoHResult> {
+  // Quad9 DoH using RFC 8484 binary wire format
+  return resolveWithBinaryDoH(
+    domain,
+    type,
+    "https://dns.quad9.net/dns-query",
+    "Quad9",
+    dnssecValidate
+  );
+}
+
 export const handler = define.handlers({
   async GET(ctx) {
     const url = new URL(ctx.req.url);
@@ -277,6 +429,7 @@ export const handler = define.handlers({
         cloudflare: resolveWithCloudflareDoH,
         "cloudflare-security": resolveWithCloudflareSecurityDoH,
         "cloudflare-family": resolveWithCloudflareFamilyDoH,
+        quad9: resolveWithQuad9DoH,
       };
 
       const resolveFn = resolvers[resolver] ?? resolvers.google;
