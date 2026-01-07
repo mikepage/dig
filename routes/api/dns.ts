@@ -160,7 +160,8 @@ async function resolveWithCloudflareDoH(
   domain: string,
   type: RecordType,
   dnssecValidate: boolean = false,
-  endpoint: string = "https://cloudflare-dns.com/dns-query"
+  endpoint: string = "https://cloudflare-dns.com/dns-query",
+  providerName: string = "Cloudflare"
 ): Promise<DoHResult> {
   const typeNum = DNS_TYPE_MAP[type];
   // Cloudflare DoH JSON API
@@ -182,7 +183,7 @@ async function resolveWithCloudflareDoH(
     },
   });
   if (!response.ok) {
-    throw new Error(`Cloudflare DNS request failed: ${response.statusText}`);
+    throw new Error(`${providerName} DNS request failed: ${response.statusText}`);
   }
 
   const data: GoogleDnsResponse = await response.json();
@@ -226,20 +227,6 @@ async function resolveWithCloudflareFamilyDoH(
     type,
     dnssecValidate,
     "https://family.cloudflare-dns.com/dns-query"
-  );
-}
-
-async function resolveWithQuad9DoH(
-  domain: string,
-  type: RecordType,
-  dnssecValidate: boolean = false
-): Promise<DoHResult> {
-  // Quad9 DoH - uses same JSON API format as Cloudflare
-  return resolveWithCloudflareDoH(
-    domain,
-    type,
-    dnssecValidate,
-    "https://dns.quad9.net/dns-query"
   );
 }
 
@@ -290,7 +277,6 @@ export const handler = define.handlers({
         cloudflare: resolveWithCloudflareDoH,
         "cloudflare-security": resolveWithCloudflareSecurityDoH,
         "cloudflare-family": resolveWithCloudflareFamilyDoH,
-        quad9: resolveWithQuad9DoH,
       };
 
       const resolveFn = resolvers[resolver] ?? resolvers.google;
