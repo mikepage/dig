@@ -15,6 +15,7 @@ const RecordTypes = [
 const Resolvers = [
   { value: "google", label: "Google DNS (DoH)" },
   { value: "cloudflare", label: "Cloudflare DNS (DoH)" },
+  { value: "cloudflare-security", label: "Cloudflare (Filtered DoH)" },
 ];
 
 
@@ -85,7 +86,7 @@ export default function DnsLookup() {
       });
 
       // Include dnssec param for DoH resolvers
-      if (resolver.value === "google" || resolver.value === "cloudflare") {
+      if (resolver.value === "google" || resolver.value === "cloudflare" || resolver.value === "cloudflare-security") {
         params.set("dnssec", dnssecValidate.value ? "true" : "false");
       }
 
@@ -240,7 +241,7 @@ export default function DnsLookup() {
         </div>
 
         {/* DNSSEC Validation Option - visible for DoH resolvers */}
-        {(resolver.value === "google" || resolver.value === "cloudflare") && (
+        {(resolver.value === "google" || resolver.value === "cloudflare" || resolver.value === "cloudflare-security") && (
           <div class="mb-4">
             <span class="block text-sm font-medium text-gray-700 mb-2">
               DNSSEC Validation

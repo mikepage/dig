@@ -159,7 +159,8 @@ async function resolveWithGoogleDoH(
 async function resolveWithCloudflareDoH(
   domain: string,
   type: RecordType,
-  dnssecValidate: boolean = false
+  dnssecValidate: boolean = false,
+  endpoint: string = "https://cloudflare-dns.com/dns-query"
 ): Promise<DoHResult> {
   const typeNum = DNS_TYPE_MAP[type];
   // Cloudflare DoH JSON API
@@ -173,7 +174,7 @@ async function resolveWithCloudflareDoH(
   } else {
     params.set("cd", "true"); // Disable DNSSEC validation
   }
-  const url = `https://cloudflare-dns.com/dns-query?${params}`;
+  const url = `${endpoint}?${params}`;
 
   const response = await fetch(url, {
     headers: {
@@ -198,6 +199,20 @@ async function resolveWithCloudflareDoH(
   }
 
   return parseDoHResponse(data, type, typeNum, dnssecValidate);
+}
+
+async function resolveWithCloudflareSecurityDoH(
+  domain: string,
+  type: RecordType,
+  dnssecValidate: boolean = false
+): Promise<DoHResult> {
+  // Cloudflare Security DNS blocks malware and phishing domains
+  return resolveWithCloudflareDoH(
+    domain,
+    type,
+    dnssecValidate,
+    "https://security.cloudflare-dns.com/dns-query"
+  );
 }
 
 export const handler = define.handlers({
@@ -245,6 +260,7 @@ export const handler = define.handlers({
       const resolvers: Record<string, (domain: string, type: RecordType, dnssec: boolean) => Promise<DoHResult>> = {
         google: resolveWithGoogleDoH,
         cloudflare: resolveWithCloudflareDoH,
+        "cloudflare-security": resolveWithCloudflareSecurityDoH,
       };
 
       const resolveFn = resolvers[resolver] ?? resolvers.google;
